@@ -15,16 +15,20 @@ let stats = { wins: 0, losses: 0 };
 
 function init() {
   // Hent statistik, hent/vælg ord, genskab evt. rækker, sæt event listeners
+  setupEventListeners();
+  loadStats();
+
   loadWordList()
     .then(() => {
-      secretWord = loadSecretWord()
+      secretWord = loadSecretWord();
 
-      if (secretWord === null) {
-        secretWord = pickRandomWord()
-        saveSecretWord(secretWord)
+      if (!secretWord || !wordList.includes(secretWord)) {
+        secretWord = pickRandomWord();
+        saveSecretWord(secretWord);
       }
 
-  updateStatsUI()
+      restoreRows();
+      updateStatsUI();
     })
     .catch((error) => {
       console.error("Kunne ikke starte spillet.", error)
@@ -37,6 +41,29 @@ function startNewGame() {
   // Nulstil bræt, tastatur, række/felt-tællere og gameOver
   // Vælg nyt ord og gem det i sessionStorage
   // Ryd gemte rækker i localStorage
+  const rows = document.querySelectorAll("#board .row");
+
+  rows.forEach((row) => {
+    row.classList.remove("shake");
+    row.querySelectorAll(".tile").forEach((tile) => {
+      tile.textContent = "";
+      tile.classList.remove("filled", "correct", "present", "absent", "flip");
+    });
+  });
+
+  document.querySelectorAll("#keyboard .key").forEach((key) => {
+    key.classList.remove("correct", "present", "absent");
+  });
+
+  currentRow = 0;
+  currentTile = 0;
+  gameOver = false;
+
+  secretWord = pickRandomWord();
+  saveSecretWord(secretWord);
+  localStorage.removeItem(STORAGE_KEYS.rows);
+  showMessage("");
+  updateStatsUI();
 }
 
 // Lytter på fysisk tastatur, skærmtastatur og "Nyt spil"-knap
@@ -45,6 +72,11 @@ function setupEventListeners() {
   document.addEventListener("keydown", (event) => {
     handleKeyPress(event.key);
   });
+
+  const newGameButton = document.getElementById("new-game");
+  if (newGameButton) {
+    newGameButton.addEventListener("click", startNewGame);
+  }
 
   // Onscreen keyboard
   const keys = document.querySelectorAll(".key");
@@ -316,7 +348,16 @@ function showMessage(text) {
 }
 
 // Farv felterne i den aktive række efter resultatet fra evaluateGuess
-function colorRow(result) {}
+function colorRow(result) {
+  const row = getCurrentRowElement();
+  const tiles = row.querySelectorAll(".tile");
+
+  tiles.forEach((tile, index) => {
+    tile.classList.remove("correct", "present", "absent");
+    tile.classList.add(result[index]);
+    tile.classList.add("flip");
+  });
+}
 
 // Markér brugte bogstaver på tastaturet: grå (forkert), grøn eller gul
 // Husk: en tast der allerede er grøn må ikke nedgraderes til gul
@@ -342,25 +383,77 @@ function updateKeyboard(guess, result) {
 }
 
 // Gem den fuldførte række i localStorage
-function saveRow(guess, result) {}
+function saveRow(guess, result) {
+  const savedRows = JSON.parse(localStorage.getItem(STORAGE_KEYS.rows) || "[]");
+  savedRows.push({ guess, result });
+  localStorage.setItem(STORAGE_KEYS.rows, JSON.stringify(savedRows));
+}
 
 // Genskab tidligere rækker fra localStorage (hvis siden genindlæses)
-function restoreRows() {}
+function restoreRows() {
+  const savedRows = JSON.parse(localStorage.getItem(STORAGE_KEYS.rows) || "[]");
+
+  if (!Array.isArray(savedRows) || savedRows.length === 0) {
+    currentRow = 0;
+    currentTile = 0;
+    gameOver = false;
+    return;
+  }
+
+  savedRows.forEach((rowState, rowIndex) => {
+    const row = document.querySelectorAll("#board .row")[rowIndex];
+    if (!row) return;
+
+    rowState.guess.split("").forEach((letter, tileIndex) => {
+      const tile = row.children[tileIndex];
+      if (!tile) return;
+
+      tile.textContent = letter;
+      tile.classList.add("filled");
+      tile.classList.add(rowState.result[tileIndex]);
+    });
+
+    updateKeyboard(rowState.guess, rowState.result);
+  });
+
+  currentRow = savedRows.length;
+  currentTile = 0;
+  gameOver = savedRows.length >= MAX_ATTEMPTS;
+}
 
 // Var det sidste forsøg (6. række) uden at have vundet?
-function checkLoss() {}
+function checkLoss() {
+  return currentRow >= MAX_ATTEMPTS - 1;
+}
 
 // Gør næste række aktiv og nulstil aktivt felt
-function nextRow() {}
+function nextRow() {
+  currentRow += 1;
+  currentTile = 0;
+}
 
 // Afslut spil: opdater stats, gem, vis besked
 // won = true (vundet) eller false (tabt)
 function endGame(won) {
+  gameOver = true;
+
+  if (won) {
+    stats.wins += 1;
+  } else {
+    stats.losses += 1;
+  }
+
+  saveStats();
   updateStatsUI();
 }
 
 // Ryst aktiv række (klassen .shake) ved ugyldigt ord eller for få bogstaver
-function shakeRow() {}
+function shakeRow() {
+  const row = getCurrentRowElement();
+  row.classList.remove("shake");
+  void row.offsetWidth;
+  row.classList.add("shake");
+}
 
 // ---------- Start spillet ---------- //
 init();
